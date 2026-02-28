@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tactical Synapse AI - Pro Analytics</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Google Fonts: Oswald for Kinetic Typography, Inter for data -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@400;600;800&display=swap"
+        rel="stylesheet">
+    <!-- Spline 3D Interactive Renderer -->
+    <script type="module" src="https://unpkg.com/@splinetool/viewer@1.0.51/build/spline-viewer.js"></script>
+    <!-- Chart.js for Radar Charts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+
+    <!-- Transparent Side Navigation -->
+    <nav class="side-nav">
+        <div class="logo">SYNAPSE <span>AI</span></div>
+        <ul class="nav-links">
+            <li><a href="#upload-section" class="active">PITCH CONTROL</a></li>
+            <li><a href="#results-dashboard">TACTICAL OPTICS</a></li>
+            <li><a href="#xg-tester">AR xG CALCULATOR</a></li>
+            <li><a href="#player-radar">PLAYER RADAR</a></li>
+            <li><a href="tactical_engine.html">TACTICAL ENGINE</a></li>
+        </ul>
+    </nav>
+
+    <main class="content-wrapper">
+
+        <!-- Hero Section: High Energy Background -->
+        <section class="hero-section" id="upload-section">
+            <div class="spline-container">
+                <spline-viewer url="https://prod.spline.design/411q9l27oA-0-ofZ/scene.splinecode"
+                    class="spline-bg"></spline-viewer>
+                <!-- Fallback gradient if Spline is slow to load -->
+                <div class="spline-fallback"></div>
+            </div>
+
+            <div class="hero-overlay"></div>
+            <div class="hero-content parallax-element">
+                <div class="football-wiggle">⚽</div>
+                <h1 class="glitch" data-text="TACTICAL SYNAPSE">TACTICAL SYNAPSE</h1>
+                <h2 class="sub-headline">PERFORMANCE OPTICS</h2>
+
+                <!-- Tactical Tablet Upload Zone -->
+                <div class="tablet-upload" id="drop-zone">
+                    <div class="tablet-screen">
+                        <div class="pulse-ring"></div>
+                        <h3>INITIALIZE MATCH FOOTAGE</h3>
+                        <p>Awaiting .MP4 Input for Spatial Pipeline</p>
+                        <input type="file" id="video-upload" accept="video/mp4,video/*" hidden>
+                        <button class="action-btn" onclick="document.getElementById('video-upload').click()">BROWSE
+                            SYSTEMS</button>
+                    </div>
+                </div>
+
+                <div id="upload-status" class="status-message hidden">
+                    <div class="scanning-bar"></div>
+                    <span id="status-text">CALIBRATING AI PIPELINE...</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Dynamic Augmented Reality xG Calculator -->
+        <section class="xg-section" id="xg-tester">
+            <div class="section-title">
+                <h2>LIVE <span class="highlight-orange">xG</span> INFERENCE</h2>
+                <div class="slash-deco"></div>
+            </div>
+
+            <div class="ar-graphics-container">
+                <div class="ar-input-panel">
+                    <h3>SET SHOOTER COORDINATES</h3>
+                    <div class="slider-group">
+                        <label>Distance to Corner Flag (X: 0-105)</label>
+                        <input type="range" id="xg-x-slider" class="styled-slider" min="0" max="105" value="90">
+                        <span class="value-display" id="val-x">90m</span>
+                    </div>
+                    <div class="slider-group">
+                        <label>Distance from Touchline (Y: 0-68)</label>
+                        <input type="range" id="xg-y-slider" class="styled-slider" min="0" max="68" value="34">
+                        <span class="value-display" id="val-y">34m</span>
+                    </div>
+                    <button class="action-btn lime" onclick="queryXgModel()">EXECUTE xG PROTOCOL</button>
+                </div>
+
+                <div class="ar-result-panel">
+                    <div class="metric-label">GOAL PROBABILITY</div>
+                    <div class="massive-percent" id="xg-result-percent">---</div>
+                    <div class="decimal-stat" id="xg-result-dec">LogReg Model: 0.000</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Overlapping Video Data Cards (Hidden until processing) -->
+        <section class="optics-section " id="results-dashboard">
+            <div class="section-title">
+                <h2>MATCH <span class="highlight-lime">OPTICS</span></h2>
+                <div class="slash-deco lime"></div>
+            </div>
+
+            <div class="video-grid-overlap">
+                <div class="data-card card-rear">
+                    <div class="card-header">
+                        <span class="dot live"></span> SPATIAL TRACKING
+                    </div>
+                    <video id="annotated-video" controls muted class="angled-video"></video>
+                </div>
+
+                <div class="data-card card-front">
+                    <div class="card-header border-orange">
+                        <span class="dot sync"></span> 2D TACTICAL PITCH
+                    </div>
+                    <video id="tactical-map" controls muted class="angled-video"></video>
+                </div>
+            </div>
+        </section>
+
+        <!-- Player Radar Comparison -->
+        <section class="radar-section" id="player-radar">
+            <div class="section-title">
+                <h2>PERFORMANCE <span class="highlight-cyan">RADAR</span></h2>
+                <div class="slash-deco cyan"></div>
+            </div>
+
+            <div class="radar-container">
+                <div class="player-profile card-left">
+                    <h3>CF // STRIKER</h3>
+                    <div class="chart-wrapper">
+                        <canvas id="radarChart1"></canvas>
+                    </div>
+                </div>
+
+                <div class="vs-badge">VS</div>
+
+                <div class="player-profile card-right">
+                    <h3>CM // PLAYMAKER</h3>
+                    <div class="chart-wrapper">
+                        <canvas id="radarChart2"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
