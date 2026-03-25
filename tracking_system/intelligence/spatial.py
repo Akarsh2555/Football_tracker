@@ -10,10 +10,14 @@ class SpatialEngine:
     Handles tracking filtering, trajectory smoothing, velocity/acceleration calculations,
     and unsupervised team color clustering using KMeans on dominant jersey RGB.
     """
-    def __init__(self, fps=25.0, team_colors_k=2, smooth_window=5, smooth_poly=2):
+    def __init__(self, fps=25.0, team_colors_k=2, smooth_window=5, smooth_poly=2,
+                 pitch_length_m=105.0, pitch_width_m=68.0, frame_size=None):
         self.fps = fps
         self.team_colors_k = team_colors_k
         self.my_team_label = 0
+        self.pitch_length_m = pitch_length_m
+        self.pitch_width_m = pitch_width_m
+        self.frame_size = frame_size  # (width_px, height_px)
         
         # History for velocity and acceleration calculations
         self.position_history = {}  # {player_id: deque of (x, y)}
@@ -96,6 +100,21 @@ class SpatialEngine:
         except Exception:
             return raw_x, raw_y
 
+    def _to_pitch_coords(self, x, y):
+        """Convert incoming coordinate system into pitch meters as needed."""
+        if 0.0 <= x <= self.pitch_length_m and 0.0 <= y <= self.pitch_width_m:
+            return x, y
+
+        if self.frame_size is not None:
+            frame_w, frame_h = self.frame_size
+            if frame_w > 0 and frame_h > 0:
+                x = x * self.pitch_length_m / frame_w
+                y = y * self.pitch_width_m / frame_h
+
+        x = max(0.0, min(x, self.pitch_length_m))
+        y = max(0.0, min(y, self.pitch_width_m))
+        return x, y
+
     def process_frame(self, frame_idx, frame, raw_player_positions):
         """
         Processes a single frame's worth of player positions.
@@ -144,6 +163,7 @@ class SpatialEngine:
             
             # Apply trajectory smoothing
             px, py = self._smooth_position(pid, raw_x, raw_y)
+            px, py = self._to_pitch_coords(px, py)
             
             # Predict team
             team_id = -1

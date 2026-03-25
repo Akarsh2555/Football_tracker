@@ -55,7 +55,7 @@ class PitchMapper:
     def transform_point(self, point: tuple) -> tuple:
         """
         Transforms a (x, y) pixel coordinate to (x_meter, y_meter) pitch coordinate.
-        
+
         Args:
             point (tuple): (x, y) coordinates in the image.
         Returns:
@@ -63,13 +63,15 @@ class PitchMapper:
         """
         if self.homography_matrix is None:
             return None
-            
+
         pt_arr = np.array([[[point[0], point[1]]]], dtype=np.float32)
         transformed_pt = cv2.perspectiveTransform(pt_arr, self.homography_matrix)
-        
         x_m, y_m = transformed_pt[0][0]
-        
-        # Optional: clip within pitch dimensions or just return as is
+
+        # Clip to known pitch bounds, avoid extreme corner collapses.
+        x_m = max(0.0, min(x_m, self.pitch_length_m))
+        y_m = max(0.0, min(y_m, self.pitch_width_m))
+
         return (float(x_m), float(y_m))
 
     def transform_points(self, points: np.ndarray) -> np.ndarray:

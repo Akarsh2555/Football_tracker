@@ -4,7 +4,7 @@ import supervision as sv
 
 class Visualizer:
     def __init__(self, pitch_length_m: float = 105.0, pitch_width_m: float = 68.0, 
-                 map_scale: float = 10.0):
+                 map_scale: float = 10.0, source_frame_size: tuple = None, invert_y: bool = False):
         """
         Initializes the visualization module.
         
@@ -16,6 +16,8 @@ class Visualizer:
         self.pitch_length_m = pitch_length_m
         self.pitch_width_m = pitch_width_m
         self.map_scale = map_scale
+        self.source_frame_size = source_frame_size  # (width_px, height_px)
+        self.invert_y = invert_y
         
         # Initialize supervision annotators
         self.box_annotator = sv.BoxAnnotator(thickness=2)
@@ -194,9 +196,9 @@ class Visualizer:
             target_pos = None
             for p in enriched_positions:
                 if p['player_id'] == ball_carrier_id:
-                    carrier_pos = (int(p['x'] * self.map_scale), int(p['y'] * self.map_scale))
+                    carrier_pos = self._to_map_coords(p['x'], p['y'])
                 elif p['player_id'] == target_id:
-                    target_pos = (int(p['x'] * self.map_scale), int(p['y'] * self.map_scale))
+                    target_pos = self._to_map_coords(p['x'], p['y'])
                     
             if carrier_pos and target_pos:
                 cv2.line(pitch, carrier_pos, target_pos, (0, 255, 255), 2, cv2.LINE_AA) # Yellow pass line
@@ -204,15 +206,7 @@ class Visualizer:
         # 2. Draw players
         for player in enriched_positions:
             pid = player['player_id']
-            px_m, py_m = player['x'], player['y']
-            
-            # Convert pitch coordinate to map pixel coordinate
-            map_x = int(px_m * self.map_scale)
-            map_y = int(py_m * self.map_scale)
-            
-            # Ensure within bounds
-            map_x = max(0, min(map_x, pitch.shape[1]-1))
-            map_y = max(0, min(map_y, pitch.shape[0]-1))
+            map_x, map_y = self._to_map_coords(player['x'], player['y'])
             
             # Store point in trajectories
             if pid not in self.trajectories:
@@ -257,3 +251,28 @@ class Visualizer:
             cv2.putText(pitch, line, (20, y_offset + i * 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
             
         return pitch
+
+    def _to_map_coords(self, x: float, y: float):
+        """Convert an input coordinate to map coordinates in pixels."""
+        # First, assume coordinates are in pitch meters
+        if 0.0 <= x <= self.pitch_length_m and 0.0 <= y <= self.pitch_width_m:
+            pitch_x = x
+            pitch_y = y
+        elif self.source_frame_size is not None:
+            frame_w, frame_h = self.source_frame_size
+            if frame_w > 0 and frame_h > 0:
+                pitch_x = x * self.pitch_length_m / frame_w
+                pitch_y = y * self.pitch_width_m / frame_h
+            else:
+                pitch_x = np.clip(x, 0.0, self.pitch_length_m)
+                pitch_y = np.clip(y, 0.0, self.pitch_width_m)
+        else:
+            pitch_x = np.clip(x, 0.0, self.pitch_length_m)
+            pitch_y = np.clip(y, 0.0, self.pitch_width_m)
+
+        if self.invert_y:
+            pitch_y = self.pitch_width_m - pitch_y
+
+        map_x = int(np.clip(pitch_x * self.map_scale, 0, self.pitch_length_m * self.map_scale - 1))
+        map_y = int(np.clip(pitch_y * self.map_scale, 0, self.pitch_width_m * self.map_scale - 1))
+        return map_x, map_y

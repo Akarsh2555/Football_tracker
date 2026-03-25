@@ -25,42 +25,49 @@ def main(args):
     
     tracker = Tracker(model_path=args.model)
     pitch_mapper = PitchMapper()
-    visualizer = Visualizer(map_scale=10.0)
-    exporter = DataExporter(args.output_dir)
-    
+
     # Setup placeholder homography (Requires actual field points for accuracy)
     # Using a trapezoid representing the field view in a typical broadcast
     w, h = meta['width'], meta['height']
+    visualizer = Visualizer(map_scale=10.0, source_frame_size=(w, h), invert_y=bool(args.invert_y if hasattr(args, 'invert_y') else False))
+    exporter = DataExporter(args.output_dir)
     
-    spatial_engine = SpatialEngine(fps=meta['fps'], team_colors_k=args.num_teams)
+    spatial_engine = SpatialEngine(
+        fps=meta['fps'],
+        team_colors_k=args.num_teams,
+        pitch_length_m=105.0,
+        pitch_width_m=68.0,
+        frame_size=(w, h)
+    )
     if hasattr(args, 'my_team_label') and args.my_team_label is not None:
         spatial_engine.my_team_label = args.my_team_label
         
     intelligence_engine = TacticalIntelligenceEngine(my_team_label=args.my_team_label if hasattr(args, 'my_team_label') else 0)
         
-    # Attempt to load calibration data: use __file__ to locate it alongside the script
-    calib_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "calibration.json")
+    # Attempt to load calibration data: use provided path or package default
+    calib_file = os.path.abspath(args.calibration) if hasattr(args, 'calibration') else os.path.join(os.path.dirname(os.path.abspath(__file__)), "calibration.json")
     if os.path.exists(calib_file):
-        print(f"Loading highly accurate homography calibration from {calib_file}...")
+        print(f"Loading homography calibration from {calib_file}...")
         with open(calib_file, 'r') as f:
             calib_data = json.load(f)
             src_pts = np.array(calib_data["src_pts"], dtype=np.float32)
             dst_pts = np.array(calib_data["dst_pts"], dtype=np.float32)
     else:
-        print("Warning: No calibration.json found. Using placeholder homography.")
-        print("Run `python calibrate.py --input <video>` for great accuracy.")
+        print(f"Warning: No calibration file found at {calib_file}. Using placeholder homography.")
+        print("Run `python calibrate.py --input <video>` and re-run with --calibration calibration.json for highest precision.")
+        # Use a standard top-left / clockwise ordering to match calibration tool
         src_pts = np.array([
-            [w * 0.1, h * 0.9],
+            [w * 0.1, h * 0.1],
+            [w * 0.9, h * 0.1],
             [w * 0.9, h * 0.9],
-            [w * 0.3, h * 0.4],
-            [w * 0.7, h * 0.4]
+            [w * 0.1, h * 0.9]
         ], dtype=np.float32)
-        
+
         dst_pts = np.array([
-            [0.0, 68.0],
-            [105.0, 68.0],
             [0.0, 0.0],
-            [105.0, 0.0]
+            [105.0, 0.0],
+            [105.0, 68.0],
+            [0.0, 68.0]
         ], dtype=np.float32)
     
     pitch_mapper.compute_homography(src_pts, dst_pts)
@@ -104,8 +111,12 @@ def main(args):
                 
             # Vectorized transformation
             transformed_pts = pitch_mapper.transform_points(np.array(points_to_transform))
-            
+
             if transformed_pts is not None:
+                # Debug trace: log first frames and first few player coordinates
+                if frame_idx == 0:
+                    print("DEBUG: src points", points_to_transform[:5])
+                    print("DEBUG: transformed meter points", transformed_pts[:5])
                 for i in range(len(tracked_players)):
                     bbox = tracked_players.xyxy[i]
                     tracker_id = tracked_players.tracker_id[i]
@@ -190,6 +201,8 @@ if __name__ == "__main__":
     
     parser.add_argument("--num_teams", type=int, default=2, help="Number of teams to cluster")
     parser.add_argument("--my_team_label", type=int, default=0, help="Cluster label for MY TEAM (e.g. 0 or 1)")
+    parser.add_argument("--invert_y", action="store_true", help="If set, invert the pitch Y axis mapping (top-down vs bottom-up)")
+    parser.add_argument("--calibration", type=str, default="calibration.json", help="Path to homography calibration JSON (optional)")
     
     args = parser.parse_args()
     main(args)
