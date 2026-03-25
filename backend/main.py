@@ -1,12 +1,33 @@
-from fastapi import FastAPI, UploadFile, File, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import shutil
-import os
 import sys
+import os
+import json
+import warnings
+
+# Suppress harmless Pydantic V1 Python 3.14 warnings from cluttering the terminal
+warnings.filterwarnings("ignore", message=".*Pydantic V1.*Python 3.14.*", category=UserWarning)
+
+# Add root synapse folder to Python path so 'backend.agents...' imports correctly
+root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if root_path not in sys.path:
+    sys.path.insert(0, root_path)
+
 import uuid
 import subprocess
+import asyncio
+
+# Import the new Multi-Agent Orchestrator
+try:
+    from backend.agents.tactical_orchestrator import TacticalOrchestrator
+    orchestrator = TacticalOrchestrator()
+except ImportError as e:
+    print(f"Failed to import Orchestrator: {e}")
+    orchestrator = None
+
 
 # Ensure we can import the tracking system modules
 # The backend is in synapse/backend, the models are in synapse/tracking_system
@@ -229,49 +250,56 @@ def get_tactical_engine_data(frame: int):
     ball_carrier = None
     intel_data = {}
     ranked_passes = []
-    pc_matrix = np.zeros((34, 52))
+    pc_matrix = np.zeros((int(PITCH_WIDTH), int(PITCH_LENGTH)))
+    img_b64 = ""
 
-    if os.path.exists(pos_file) and os.path.exists(intel_file):
-        df_pos = pd.read_csv(pos_file)
-        df_intel = pd.read_csv(intel_file)
-        
-        # Filter for frame
-        frame_pos = df_pos[df_pos['frame'] == frame]
-        frame_intel = df_intel[df_intel['frame_id'] == frame]
-        
-        if not frame_intel.empty:
-            row = frame_intel.iloc[0]
-            intel_data = {
-                "contextual_xg": float(row['contextual_xG']) if pd.notnull(row['contextual_xG']) else 0.0,
-                "momentum": str(row['momentum_state']) if pd.notnull(row['momentum_state']) else "Neutral",
-                "risk_index": float(row['risk_index']) if pd.notnull(row['risk_index']) else 0.0,
-                "possession_probability": float(row['possession_probability']) if pd.notnull(row['possession_probability']) else 0.0
-            }
+    try:
+        if os.path.exists(pos_file) and os.path.exists(intel_file):
+            df_pos = pd.read_csv(pos_file)
+            df_intel = pd.read_csv(intel_file)
             
-        for _, p in frame_pos.iterrows():
-            px = float(p['pitch_x_meter']) if pd.notnull(p['pitch_x_meter']) else 0.0
-            py = float(p['pitch_y_meter']) if pd.notnull(p['pitch_y_meter']) else 0.0
-            vx = float(p['vx']) if pd.notnull(p['vx']) else 0.0
-            vy = float(p['vy']) if pd.notnull(p['vy']) else 0.0
-            pid = int(p['player_id']) if pd.notnull(p['player_id']) else 0
+            # Filter for frame
+            frame_pos = df_pos[df_pos['frame'] == frame]
+            frame_intel = df_intel[df_intel['frame_id'] == frame]
             
-            # Note: Ensure coordinate conversion if the tracking_system maps 0-105 instead of standardizing here
-            pos_dict = {"pos": (px, py), "vel": (vx, vy), "id": pid, "speed": float(p['speed']) if pd.notnull(p['speed']) else 0.0}
-            
-            if p['is_my_team'] == True or p['is_my_team'] == 'True':
-                attackers.append(pos_dict)
-            else:
-                defenders.append(pos_dict)
+            if not frame_intel.empty:
+                row = frame_intel.iloc[0]
+                intel_data = {
+                    "contextual_xg": float(row['contextual_xG']) if pd.notnull(row['contextual_xG']) else 0.0,
+                    "momentum": str(row['momentum_state']) if pd.notnull(row['momentum_state']) else "Neutral",
+                    "risk_index": float(row['risk_index']) if pd.notnull(row['risk_index']) else 0.0,
+                    "possession_probability": float(row['possession_probability']) if pd.notnull(row['possession_probability']) else 0.0
+                }
                 
-            if p['is_ball_carrier'] == True or p['is_ball_carrier'] == 'True':
-                ball_carrier = pos_dict
+            for _, p in frame_pos.iterrows():
+                px = float(p['pitch_x_meter']) if pd.notnull(p['pitch_x_meter']) else 0.0
+                py = float(p['pitch_y_meter']) if pd.notnull(p['pitch_y_meter']) else 0.0
+                vx = float(p['vx']) if pd.notnull(p['vx']) else 0.0
+                vy = float(p['vy']) if pd.notnull(p['vy']) else 0.0
+                pid = int(p['player_id']) if pd.notnull(p['player_id']) else 0
+                
+                pos_dict = {"pos": (px, py), "vel": (vx, vy), "id": pid, "speed": float(p['speed']) if pd.notnull(p['speed']) else 0.0}
+                
+                if p['is_my_team'] == True or p['is_my_team'] == 'True':
+                    attackers.append(pos_dict)
+                else:
+                    defenders.append(pos_dict)
+                    
+                if p['is_ball_carrier'] == True or p['is_ball_carrier'] == 'True':
+                    ball_carrier = pos_dict
 
-        # Generate Pitch Control & Passes if we have attackers and defenders
-        if len(attackers) > 0 and len(defenders) > 0:
-            pc_matrix = generate_pitch_control(attackers, defenders)
+            if len(attackers) > 0 and len(defenders) > 0:
+                pc_matrix = generate_pitch_control(attackers, defenders)
+                
+            if te_xg_model and ball_carrier and len(attackers) > 0:
+                ranked_passes = evaluate_passes(ball_carrier, attackers, pc_matrix, te_xg_model, te_xg_scaler)
+
+        # Generate Image
+        if ball_carrier and len(attackers) > 0:
+            img_b64 = build_pitch_figure(ball_carrier, attackers, defenders, pc_matrix, ranked_passes)
             
-        if te_xg_model and ball_carrier and len(attackers) > 0:
-            ranked_passes = evaluate_passes(ball_carrier, attackers, pc_matrix, te_xg_model, te_xg_scaler)
+    except Exception as e:
+        print(f"Warning: tactical API logic error on frame {frame}: {e}")
 
     # Convert positions to lists so they are JSON serializable
     serializable_ranked_passes = []
@@ -280,11 +308,6 @@ def get_tactical_engine_data(frame: int):
         if isinstance(opt_copy["pos"], tuple):
             opt_copy["pos"] = list(opt_copy["pos"])
         serializable_ranked_passes.append(opt_copy)
-
-    # Generate Image
-    img_b64 = ""
-    if ball_carrier and len(attackers) > 0:
-        img_b64 = build_pitch_figure(ball_carrier, attackers, defenders, pc_matrix, ranked_passes)
         
     latency_ms = (time.time() - t0) * 1000
 
@@ -347,11 +370,18 @@ def process_video_task(job_id: str, input_path: str):
             
             src_annotated = os.path.join(default_output, "output_tracked_video.mp4")
             src_map = os.path.join(default_output, "tactical_map_video.mp4")
+            src_json = os.path.join(default_output, "tracking_data.json")
             
             if os.path.exists(src_annotated):
                 shutil.copy(src_annotated, annotated_out)
             if os.path.exists(src_map):
                 shutil.copy(src_map, map_out)
+                
+            # Auto-ingest into RAG database so the AI Coach can answer questions
+            if os.path.exists(src_json):
+                ingest_script = os.path.join(os.path.dirname(__file__), "ingest_to_db.py")
+                print(f"Auto-ingesting {src_json} into RAG database...")
+                subprocess.run(["python", ingest_script], capture_output=True)
                 
             jobs[job_id]["status"] = "completed"
             jobs[job_id]["annotated_video_url"] = f"/static/jobs/{job_id}/annotated_video.mp4"
@@ -371,6 +401,24 @@ def process_video_task(job_id: str, input_path: str):
         # Cleanup uploaded raw file
         if os.path.exists(input_path):
             os.remove(input_path)
+
+class CalibrationData(BaseModel):
+    src_pts: list[list[float]]
+    dst_pts: list[list[float]]
+
+from fastapi import Request
+
+@app.post("/api/save-calibration")
+async def save_calibration(request: Request):
+    """Saves the 4 source/destination points from the Web UI to tracking_system/calibration.json"""
+    calib_file = os.path.join(tracking_system_path, "calibration.json")
+    body = await request.json()
+    print(f"DEBUG: RAW BODY: {body}")
+    
+    with open(calib_file, "w") as f:
+        json.dump(body, f, indent=4)
+        
+    return {"status": "success", "message": "Calibration points saved."}
 
 @app.post("/api/upload-video")
 async def upload_video(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
@@ -404,11 +452,91 @@ def get_job_status(job_id: str):
         return JSONResponse(status_code=404, content={"error": "Job not found"})
     return jobs[job_id]
 
+# --- MULTI-AGENT WEBSOCKET ENDPOINT ---
+@app.websocket("/ws/post_match_chat")
+async def websocket_post_match_chat(websocket: WebSocket):
+    """
+    WebSocket endpoint that streams the post-match multi-agent reasoning 
+    from the TacticalOrchestrator back to the frontend.
+    """
+    await websocket.accept()
+    if orchestrator is None:
+        await websocket.send_json({"agent": "System", "text": "Error: Tactical Orchestrator not loaded."})
+        await websocket.close()
+        return
+
+    try:
+        while True:
+            # Wait for user message
+            data = await websocket.receive_text()
+            print(f"Received WS prompt: {data}")
+            
+            # Delegate to Orchestrator MAS
+            await orchestrator.process_chat_message(data, websocket)
+            
+    except WebSocketDisconnect:
+        print("WebSocket client disconnected from /ws/agent_chat")
+    except Exception as e:
+        print(f"WebSocket error: {e}")
+        try:
+            await websocket.close()
+        except:
+            pass
+            
+# --- POST-MATCH REPORTING ENDPOINTS (DIRECTIVE 3) ---
+
+@app.post("/api/generate_match_report")
+async def generate_match_report():
+    """
+    Endpoint that triggers the MAS to digest the entire match RAG database 
+    and return a comprehensive post-match summary.
+    """
+    if orchestrator is None:
+        return JSONResponse(status_code=500, content={"error": "Orchestrator MAS offline"})
+        
+    try:
+        report = await orchestrator.generate_full_report()
+        return {"status": "success", "report": report}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.websocket("/ws/post_match_chat")
+async def websocket_post_match_chat(websocket: WebSocket):
+    """
+    Dedicated WebSocket endpoint for the Post-Match Analyst Chat UI.
+    Streams back-and-forth Q&A about specific match incidents using RAG.
+    """
+    await websocket.accept()
+    if orchestrator is None:
+        await websocket.send_json({"agent": "System", "text": "Tactical Assistant Offline."})
+        await websocket.close()
+        return
+
+    try:
+        while True:
+            data = await websocket.receive_text()
+            # Delegate to the same Orchestrator pipeline, which now handles RAG validation
+            await orchestrator.process_chat_message(data, websocket)
+            
+    except WebSocketDisconnect:
+        print("WebSocket client disconnected from /ws/post_match_chat")
+    except Exception as e:
+        print(f"WebSocket error: {e}")
+        try:
+            await websocket.close()
+        except:
+            pass
+
 # Mount static files to serve the output videos
 from fastapi.staticfiles import StaticFiles
+
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 os.makedirs(static_dir, exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+output_dir = os.path.join(tracking_system_path, "output")
+if os.path.exists(output_dir):
+    app.mount("/output", StaticFiles(directory=output_dir), name="output")
 
 if __name__ == "__main__":
     import uvicorn

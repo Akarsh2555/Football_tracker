@@ -20,6 +20,12 @@ class PassEngine:
             interception_risk = 0.0
             for opp in opponents:
                 opp_pos = np.array([opp['x'], opp['y']])
+                
+                # Receiver marking penalty: severe danger if an opponent is marking the receiver tightly
+                opp_to_receiver_dist = np.linalg.norm(opp_pos - tm_pos)
+                if opp_to_receiver_dist < 2.5:
+                    interception_risk += 0.8 * (1.0 - (opp_to_receiver_dist / 2.5))**2
+
                 # Distance from opponent to passing lane
                 line_vec = tm_pos - ball_carrier_pos
                 line_len = np.linalg.norm(line_vec)

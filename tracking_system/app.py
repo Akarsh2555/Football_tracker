@@ -9,6 +9,9 @@ import json
 import os
 import time
 import cv2
+import requests
+from websockets.sync.client import connect  # Synchronous websocket connection for streamlit
+import threading
 
 st.set_page_config(
     page_title="SYNAPSE · Tactical Engine",

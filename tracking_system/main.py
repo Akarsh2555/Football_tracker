@@ -3,6 +3,7 @@ import cv2
 import argparse
 import numpy as np
 import json
+import imageio
 from tqdm import tqdm
 
 from video_processor import VideoProcessor
@@ -37,8 +38,8 @@ def main(args):
         
     intelligence_engine = TacticalIntelligenceEngine(my_team_label=args.my_team_label if hasattr(args, 'my_team_label') else 0)
         
-    # Attempt to load calibration data
-    calib_file = "calibration.json"
+    # Attempt to load calibration data: use __file__ to locate it alongside the script
+    calib_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "calibration.json")
     if os.path.exists(calib_file):
         print(f"Loading highly accurate homography calibration from {calib_file}...")
         with open(calib_file, 'r') as f:
@@ -69,21 +70,20 @@ def main(args):
     out_map_path = os.path.join(args.output_dir, "tactical_map_video.mp4")
     out_composite_path = os.path.join(args.output_dir, "output_composite_video.mp4")
     
-    # Use avc1 (H.264) codec for broad HTML5 browser compatibility, avoiding mp4v playback issues
-    fourcc = cv2.VideoWriter_fourcc(*'avc1')
-    out_video = cv2.VideoWriter(out_video_path, fourcc, meta['fps'], (w, h))
+    # Use imageio's FFMPEG backend for foolproof H.264 (avc1) web-playable output on Windows
+    out_video = imageio.get_writer(out_video_path, fps=meta['fps'], codec='libx264')
     
     # Compute map dimensions based on scale
     map_w = int(105.0 * 10.0)
     map_h = int(68.0 * 10.0)
-    out_map = cv2.VideoWriter(out_map_path, fourcc, meta['fps'], (map_w, map_h))
+    out_map = imageio.get_writer(out_map_path, fps=meta['fps'], codec='libx264')
     
     # Compute composite dimensions based on height of the main video
     # Resizing the tactical map to match the height of the main video
     comp_map_h = h
     comp_map_w = int(map_w * (h / map_h))
     comp_w = w + comp_map_w
-    out_composite = cv2.VideoWriter(out_composite_path, fourcc, meta['fps'], (comp_w, h))
+    out_composite = imageio.get_writer(out_composite_path, fps=meta['fps'], codec='libx264')
     
     # 3. Process video frame-by-frame
     print("Processing video...")
@@ -150,14 +150,14 @@ def main(args):
         annotated_frame = visualizer.annotate_frame(frame, tracked_players, enriched_positions, frame_intel)
         tactical_map = visualizer.render_tactical_map(frame_idx, enriched_positions, frame_intel)
         
-        # Write frames to output videos
-        out_video.write(annotated_frame)
-        out_map.write(tactical_map)
+        # Write frames to output videos (imageio expects RGB format, cv2 produces BGR)
+        out_video.append_data(cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB))
+        out_map.append_data(cv2.cvtColor(tactical_map, cv2.COLOR_BGR2RGB))
         
         # Write Composite Frame
         resized_map = cv2.resize(tactical_map, (comp_map_w, comp_map_h))
         composite_frame = np.hstack((annotated_frame, resized_map))
-        out_composite.write(composite_frame)
+        out_composite.append_data(cv2.cvtColor(composite_frame, cv2.COLOR_BGR2RGB))
         
         # Optional: display frame for debugging/real-time native viewing
         # cv2.imshow("Tactical Engine - Side-By-Side (Press 'q' to quit)", composite_frame)
@@ -172,9 +172,9 @@ def main(args):
             
     # 4. Cleanup and Export
     video_proc.release()
-    out_video.release()
-    out_map.release()
-    out_composite.release()
+    out_video.close()
+    out_map.close()
+    out_composite.close()
     cv2.destroyAllWindows()
     
     print("Exporting data...")

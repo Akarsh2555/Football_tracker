@@ -1,7 +1,7 @@
 // Set this to your Render URL after deployment!
 // Example: const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? "http://127.0.0.1:8000/api" : "https://synapse-tactical-engine.onrender.com/api";
 const API_BASE = "http://127.0.0.1:8000/api";
-const PASS_COLORS = ["#d4af37", "#e6c280", "#c82a2a"]; // Adjusted to vintage theme
+const PASS_COLORS = ["#ccff00", "#ffffff", "#ff2a4d"]; // Brutalist colors
 const TARGET_NAMES = ["ALPHA", "BETA", "GAMMA"];
 const RANK_LABELS = ["1ST", "2ND", "3RD"];
 
@@ -36,13 +36,10 @@ async function fetchTacticalData(frame) {
 
 function showLoading(isLoading) {
     const overlay = document.getElementById("loading-overlay");
-    const img = document.getElementById("pitch-img");
     if (isLoading) {
         overlay.style.display = "flex";
-        img.style.display = "none";
     } else {
         overlay.style.display = "none";
-        img.style.display = "block";
     }
 }
 
@@ -50,8 +47,11 @@ function updateUI(data) {
     const { frame, latency_ms, attackers_count, defenders_count, ranked_passes, pitch_image_b64, intel_data } = data;
 
     // Update Top Header Nav Ticker Elements
-    document.getElementById("ticker-frame").innerText = frame;
-    document.getElementById("ticker-lat").innerText = `${Math.round(latency_ms)}ms`;
+    const tfElem = document.getElementById("ticker-frame");
+    if (tfElem) tfElem.innerText = frame;
+
+    const latElem = document.getElementById("ticker-lat");
+    if (latElem) latElem.innerText = `${Math.round(latency_ms)}ms`;
 
     if (intel_data) {
         const xgElem = document.getElementById("ticker-xg");
@@ -62,22 +62,25 @@ function updateUI(data) {
         if (momElem) momElem.innerText = intel_data.momentum || "Neutral";
     }
 
-    if (ranked_passes && ranked_passes.length > 0) {
-        const bestPass = ranked_passes[0];
-        document.getElementById("ticker-ev").innerText = `+${bestPass.ev.toFixed(2)}`;
-    } else {
-        document.getElementById("ticker-ev").innerText = "--";
+    const evElem = document.getElementById("ticker-ev");
+    if (evElem) {
+        if (ranked_passes && ranked_passes.length > 0) {
+            const bestPass = ranked_passes[0];
+            evElem.innerText = `+${bestPass.ev.toFixed(2)}`;
+        } else {
+            evElem.innerText = "--";
+        }
     }
 
-    // Update Pitch Image
-    if (pitch_image_b64) {
-        document.getElementById("pitch-img").src = "data:image/png;base64," + pitch_image_b64;
-    }
+    // 3D rendering removed. 2D overlay and AI chat is now prioritized.
 
     // Update Bottom Right Telemetry Elements
-    document.getElementById("tele-att").innerText = attackers_count;
-    document.getElementById("tele-def").innerText = defenders_count;
-    document.getElementById("tele-opt").innerText = ranked_passes ? ranked_passes.length : 0;
+    const teleAtt = document.getElementById("tele-att");
+    const teleDef = document.getElementById("tele-def");
+    const teleOpt = document.getElementById("tele-opt");
+    if (teleAtt) teleAtt.innerText = attackers_count;
+    if (teleDef) teleDef.innerText = defenders_count;
+    if (teleOpt) teleOpt.innerText = ranked_passes ? ranked_passes.length : 0;
 
     // Update Pass Intelligence Cards
     const passCardsContainer = document.getElementById("pass-cards-container");
@@ -103,39 +106,36 @@ function updateUI(data) {
         const dashOffset = dashArrayFull * (pp / 100);
 
         const cardHtml = `
-            <div class="bg-v-dark-red-light p-4 rounded-lg border flex flex-col gap-4 relative overflow-hidden" style="border-color: ${col}40;">
-                <div class="absolute -right-2 -top-4 text-[80px] font-display font-bold text-off-white opacity-5 pointer-events-none">${i + 1}</div>
-                <div class="flex justify-between items-start z-10">
+            <div class="bg-black p-4 md:p-6 border-2 flex flex-col gap-4 relative overflow-hidden min-w-[280px]" style="border-color: ${col};">
+                <div class="absolute -right-4 -top-6 text-[120px] font-oswald font-black opacity-10 pointer-events-none" style="color: ${col};">${i + 1}</div>
+                <div class="flex justify-between items-start z-10 border-b-2 pb-2" style="border-color: ${col}40;">
                     <div>
-                        <p class="text-[9px] uppercase font-bold tracking-tighter" style="color: ${col};">Target ${name} - Z${i + 1}</p>
-                        <p class="text-sm font-bold text-off-white">Execution Horizon</p>
-                        <p class="text-[8px] font-mono text-off-white/40 mt-1">⊕ ${coord}</p>
+                        <p class="text-xs uppercase font-oswald font-bold tracking-widest bg-black px-1" style="color: ${col}; border: 1px solid ${col}; display: inline-block;">TGT ${name}</p>
+                        <p class="text-lg font-oswald font-bold text-white uppercase mt-2 w-max">EXECUTION HORIZON</p>
+                        <p class="text-xs font-mono text-[#8a8a8a] mt-1 tracking-widest border-l-2 pl-2" style="border-color: ${col};">⊕ ${coord}</p>
                     </div>
-                    <span class="material-symbols-outlined text-lg" style="color: ${col};">trending_up</span>
                 </div>
-                <div class="flex items-center gap-4 z-10">
-                    <div class="relative size-12 shrink-0">
-                        <svg class="size-full -rotate-90" viewBox="0 0 36 36">
-                            <circle cx="18" cy="18" fill="none" r="16" stroke-width="3" style="stroke: ${col}20;"></circle>
-                            <circle cx="18" cy="18" fill="none" r="16" stroke-dasharray="${dashOffset}, ${dashArrayFull}" stroke-linecap="round" stroke-width="3" style="stroke: ${col}; transition: stroke-dasharray 1s ease;"></circle>
-                        </svg>
-                        <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-off-white">${pp.toFixed(0)}%</div>
+                <div class="flex items-center gap-6 z-10 w-full mt-2">
+                    <div class="relative size-16 shrink-0 border-2 bg-[#111] flex items-center justify-center" style="border-color: ${col};">
+                        <div class="absolute inset-0 bg-transparent" style="height: ${100 - pp}%;"></div>
+                        <div class="absolute bottom-0 left-0 right-0 transition-all opacity-20" style="height: ${pp}%; background-color: ${col};"></div>
+                        <div class="text-xl font-oswald font-black z-10" style="color: ${col};">${pp.toFixed(0)}<span class="text-xs">%</span></div>
                     </div>
-                    <div class="flex-1">
-                        <div class="flex justify-between text-[9px] text-off-white/60 mb-1 font-bold">
-                            <span>EXPECTED VALUE</span>
+                    <div class="flex-1 w-full">
+                        <div class="flex justify-between text-xs text-[#8a8a8a] mb-1 font-oswald font-bold uppercase tracking-widest">
+                            <span>VALUE_EV</span>
                             <span style="color: ${col};">+${opt.ev.toFixed(3)}</span>
                         </div>
-                        <div class="h-1 w-full rounded-full overflow-hidden" style="background-color: ${col}20;">
-                            <div class="h-full rounded-full" style="width: ${Math.min((opt.ev / 0.5) * 100, 100).toFixed(1)}%; background-color: ${col};"></div>
+                        <div class="h-2 w-full bg-[#111] border border-[#333]">
+                            <div class="h-full transition-all" style="width: ${Math.min((opt.ev / 0.5) * 100, 100).toFixed(1)}%; background-color: ${col};"></div>
                         </div>
                         
-                        <div class="flex justify-between text-[9px] text-off-white/60 mb-1 font-bold mt-2">
-                            <span>GOAL THREAT xG</span>
-                            <span>${xg.toFixed(3)}</span>
+                        <div class="flex justify-between text-xs text-[#8a8a8a] mb-1 font-oswald font-bold uppercase tracking-widest mt-4">
+                            <span>THREAT_xG</span>
+                            <span class="text-white">${xg.toFixed(3)}</span>
                         </div>
-                        <div class="h-1 w-full rounded-full overflow-hidden bg-off-white/10">
-                            <div class="h-full rounded-full" style="width: ${Math.min(xg * 100, 100).toFixed(1)}%; background-color: #f8ecec;"></div>
+                        <div class="h-2 w-full bg-[#111] border border-[#333]">
+                            <div class="h-full transition-all bg-white" style="width: ${Math.min(xg * 100, 100).toFixed(1)}%;"></div>
                         </div>
                     </div>
                 </div>
